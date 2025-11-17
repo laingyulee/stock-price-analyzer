@@ -37,7 +37,6 @@ function StockAnalysis() {
   const [llmAnalysis, setLlmAnalysis] = useState(null);
   const [isLlmLoading, setIsLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState('');
-  const [llmPrompt, setLlmPrompt] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
