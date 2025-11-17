@@ -1,10 +1,10 @@
-FROM node:18-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
 # 安装依赖
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # 复制源代码
 COPY src ./src
@@ -12,7 +12,7 @@ COPY src ./src
 # 构建前端
 WORKDIR /app/src/ui
 COPY src/ui/package*.json ./
-RUN npm ci && npm run build
+RUN npm install && npm run build
 
 WORKDIR /app
 

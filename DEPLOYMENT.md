@@ -281,18 +281,18 @@ sudo ./deploy.sh --status
 ### 1. 创建 Dockerfile
 
 ```dockerfile
-FROM node:18-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
 # 安装依赖
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --only=production
 
 # 构建前端
 COPY src/ui ./src/ui
 WORKDIR /app/src/ui
-RUN npm ci && npm run build
+RUN npm install && npm run build
 WORKDIR /app
 
 # 复制源代码
