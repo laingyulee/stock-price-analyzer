@@ -12,7 +12,9 @@ COPY src ./src
 # 构建前端
 WORKDIR /app/src/ui
 COPY src/ui/package*.json ./
-RUN npm install && npm run build
+RUN npm install
+RUN npm install react-scripts
+RUN npm run build
 
 WORKDIR /app
 

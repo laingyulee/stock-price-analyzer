@@ -308,20 +308,26 @@ EXPOSE 3000
 CMD ["node", "src/index.js"]
 ```
 
+# docker build . --tag stock-price-analyzer
+
 ### 2. 创建 docker-compose.yml
 
 ```yaml
 version: '3.8'
 
 services:
-  stock-analyzer:
+  stock-price-analyzer:
     build: .
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - DATABASE_PATH=/app/data/stocks.db
       - API_BASE_URL=http://yfinance_proxy:8080
+      - LLM_API_ENDPOINT=${LLM_API_ENDPOINT}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -340,6 +346,8 @@ services:
       - stock-analyzer
     restart: unless-stopped
 ```
+
+# docker run -d --name stock-price-analyzer -p 3000:3000 -v ./data:/app/data -v ./logs:/app/logs -e "NODE_ENV=production" -e "PORT=3000" -e "API_BASE_URL=http://yfinance_proxy:8080" -e "DATABASE_PATH=/app/data/stocks.db" -e "LLM_API_ENDPOINT=${LLM_API_ENDPOINT}" -e "LLM_API_KEY=${LLM_API_KEY}" -e "LLM_MODEL_NAME=${LLM_MODEL_NAME}" stock-price-analyzer
 
 ### 3. 使用 Docker 部署
 
