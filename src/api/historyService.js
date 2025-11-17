@@ -36,6 +36,9 @@ class HistoryService {
                         high: row.price_range_high
                     },
                     technicalIndicators: JSON.parse(row.technical_indicators || '{}'),
+                    currentPrice: row.current_price,
+                    priceChange: row.price_change,
+                    priceChange_Percent: row.price_change_percent,
                     createdAt: row.created_at
                 }));
 
@@ -46,7 +49,7 @@ class HistoryService {
 
     async getStockPriceHistory(symbol, startDate = null, endDate = null, limit = 100) {
         return new Promise((resolve, reject) => {
-            const db = this.db.db;
+            const db = this.db;
             let query = `
                 SELECT *
                 FROM daily_prices

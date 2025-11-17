@@ -1,9 +1,9 @@
 const _ = require('lodash');
 const axios = require('axios');
-
+const stockDataService = require('../api/stockData');
+const historyService = require('../api/historyService');
 class LLMAnalyzer {
     constructor() {}
-
     async getAnalysis(symbol, db) {
         return new Promise((resolve, reject) => {
             db.get('SELECT * FROM llm_analysis WHERE stock_symbol = ?', [symbol], (err, row) => {
@@ -12,19 +12,15 @@ class LLMAnalyzer {
             });
         });
     }
-
     async generateAndSaveAnalysis(symbol, db) {
         // 1. Gather data from the database
         const overview = await this._getOverview(symbol, db);
         const analysis = await this._getLatestAnalysis(symbol, db);
         const prices = await this._getRecentPrices(symbol, db);
-
         // 2. Prepare the prompt for the LLM
         const prompt = this._preparePrompt(overview, analysis, prices);
-
         // 3. Call the LLM
         const llmResultText = await this._callLLM(prompt);
-
         // 4. Save the result to the database
         const resultToSave = {
             stock_symbol: symbol,
@@ -32,7 +28,6 @@ class LLMAnalyzer {
             model_name: process.env.LLM_MODEL_NAME,
             generated_at: new Date().toISOString(),
         };
-
         await new Promise((resolve, reject) => {
             db.run(
                 `INSERT INTO llm_analysis (stock_symbol, analysis_text, model_name, generated_at)
@@ -53,52 +48,48 @@ class LLMAnalyzer {
                 }
             );
         });
-
         return resultToSave;
     }
-
     async _getOverview(symbol, db) {
-        return new Promise((resolve, reject) => {
-            db.get('SELECT * FROM stocks WHERE symbol = ?', [symbol], (err, row) => {
-                if (err) return reject(err);
-                resolve(row || {});
-            });
-        });
+        try {
+            const stockData = await stockDataService.getLocalStockData(symbol, db);
+            return stockData.overview || {};
+        } catch (error) {
+            console.error(`Error fetching overview data for ${symbol}:`, error.message);
+        }
     }
-
     async _getLatestAnalysis(symbol, db) {
-        return new Promise((resolve, reject) => {
-            db.get('SELECT * FROM price_analysis WHERE stock_symbol = ? ORDER BY analysis_date DESC LIMIT 1', [symbol], (err, row) => {
-                if (err) return reject(err);
-                // Safely parse technical indicators
-                let indicators = {};
-                if (row && row.technical_indicators) {
-                    try {
-                        indicators = JSON.parse(row.technical_indicators);
-                    } catch (e) {
-                        console.error("Failed to parse technical_indicators JSON:", e);
-                    }
-                }
-                resolve({ ...row, technical_indicators: indicators });
-            });
-        });
+        try {
+            // Set the database connection for historyService
+            historyService.setDatabase(db);
+            // Get analysis history with limit 1 to get the latest
+            const analysisHistory = await historyService.getAnalysisHistory(symbol, 1);
+            if (analysisHistory && analysisHistory.length > 0) {
+                const latestAnalysis = analysisHistory[0];
+                return latestAnalysis;
+            } else {
+                // Return empty object if no analysis found
+                return {};
+            }
+        } catch (error) {
+            console.error(`Error fetching latest analysis for ${symbol}:`, error.message);
+        }
     }
-
     async _getRecentPrices(symbol, db, limit = 30) {
-        return new Promise((resolve, reject) => {
-            db.all(`SELECT date, close_price, volume FROM daily_prices WHERE stock_symbol = ? ORDER BY date DESC LIMIT ${limit}`, [symbol], (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows.reverse()); // oldest first
-            });
-        });
+        try {
+            historyService.setDatabase(db);
+            // Get stock price history with the specified limit
+            const priceHistory = await historyService.getStockPriceHistory(symbol, null, null, limit);
+            return priceHistory;
+        } catch (error) {
+            console.error(`Error fetching recent prices for ${symbol}:`, error.message);
+        }
     }
-
     _preparePrompt(overview, analysis, prices) {
         // This function would format the data into a detailed prompt for a real LLM.
         // For our mock, we just need to ensure we have the data.
         const prompt = `
 Analyze the stock ${overview.symbol} (${overview.name}).
-
 **Fundamental Data:**
 - Company Description: ${overview.description || 'N/A'}
 - Sector: ${overview.sector || 'N/A'}, Industry: ${overview.industry || 'N/A'}
@@ -118,7 +109,6 @@ Analyze the stock ${overview.symbol} (${overview.name}).
 - 200-Day Average: $${overview.twoHundredDayAverage || 'N/A'}
 - Shares Outstanding: ${overview.shares_outstanding ? (overview.shares_outstanding / 1000000).toFixed(2) + 'M' : 'N/A'}
 - Revenue Per Share: $${overview.revenuePerShare || 'N/A'}
-
 **Profitability Metrics:**
 - Return on Equity: ${overview.returnOnEquity ? (overview.returnOnEquity * 100).toFixed(2) + '%' : 'N/A'}
 - Return on Assets: ${overview.returnOnAssets ? (overview.returnOnAssets * 100).toFixed(2) + '%' : 'N/A'}
@@ -130,7 +120,6 @@ Analyze the stock ${overview.symbol} (${overview.name}).
 - Net Income: $${overview.netIncomeToCommon ? (overview.netIncomeToCommon / 1000000000).toFixed(2) + 'B' : 'N/A'}
 - Gross Profits: $${overview.grossProfits ? (overview.grossProfits / 1000000000).toFixed(2) + 'B' : 'N/A'}
 - EBITDA: $${overview.ebitda ? (overview.ebitda / 1000000000).toFixed(2) + 'B' : 'N/A'}
-
 **Financial Health Metrics:**
 - Debt to Equity: ${overview.debtToEquity ? overview.debtToEquity.toFixed(2) : 'N/A'}
 - Enterprise Value: $${overview.enterpriseValue ? (overview.enterpriseValue / 1000000000).toFixed(2) + 'B' : 'N/A'}
@@ -142,11 +131,9 @@ Analyze the stock ${overview.symbol} (${overview.name}).
 - Current Ratio: ${overview.currentRatio || 'N/A'}
 - Free Cashflow: $${overview.freeCashflow ? (overview.freeCashflow / 1000000000).toFixed(2) + 'B' : 'N/A'}
 - Operating Cashflow: $${overview.operatingCashflow ? (overview.operatingCashflow / 1000000000).toFixed(2) + 'B' : 'N/A'}
-
 **Growth Metrics:**
 - Earnings Growth: ${overview.earningsGrowth ? (overview.earningsGrowth * 100).toFixed(2) + '%' : 'N/A'}
 - Revenue Growth: ${overview.revenueGrowth ? (overview.revenueGrowth * 100).toFixed(2) + '%' : 'N/A'}
-
 **Analyst Metrics:**
 - Analyst Target Price (Mean): $${overview.targetMeanPrice || 'N/A'}
 - Analyst Target Price (Median): $${overview.targetMedianPrice || 'N/A'}
@@ -155,27 +142,24 @@ Analyze the stock ${overview.symbol} (${overview.name}).
 - Analyst Recommendation Mean: ${overview.recommendationMean || 'N/A'}
 - Analyst Recommendation Key: ${overview.recommendationKey || 'N/A'}
 - Number of Analyst Opinions: ${overview.numberOfAnalystOpinions || 'N/A'}
-
 **Company Information:**
 - Full Time Employees: ${overview.fullTimeEmployees || 'N/A'}
 - Website: ${overview.website || 'N/A'}
 - Address: ${overview.address1 ? `${overview.address1}, ${overview.city || ''}, ${overview.state || ''} ${overview.zip || ''}, ${overview.country || ''}` : 'N/A'}
-
 **Technical Analysis Data:**
-- Current Price: $${analysis.current_price || 'N/A'}
-- Target Price: $${analysis.target_price || 'N/A'}
-- Price Range (Low/High): $${analysis.price_range_low || 'N/A'} / $${analysis.price_range_high || 'N/A'}
-- Confidence Score: ${analysis.confidence_score ? (analysis.confidence_score * 100).toFixed(0) + '%' : 'N/A'}
-- Analysis Method: ${analysis.analysis_method || 'N/A'}
-- RSI (14-day): ${_.get(analysis, 'technical_indicators.rsi', []).slice(-1)[0] || 'N/A'}
-- MACD: ${JSON.stringify(_.get(analysis, 'technical_indicators.macd', []).slice(-1)[0]) || 'N/A'}
-- Bollinger Bands: ${JSON.stringify(_.get(analysis, 'technical_indicators.bollinger', []).slice(-1)[0]) || 'N/A'}
-- Price Change: ${analysis.price_change ? '$' + analysis.price_change.toFixed(2) : 'N/A'} (${analysis.price_change_percent ? analysis.price_change_percent.toFixed(2) + '%' : 'N/A'})
+- Current Price: $${analysis.currentPrice.toFixed(2) || 'N/A'}
+- Target Price: $${analysis.targetPrice.toFixed(2) || 'N/A'}
+- Price Range (Low/High): $${analysis.priceRange.low.toFixed(2) || 'N/A'} / $${analysis.priceRange.high.toFixed(2) || 'N/A'}
+- Confidence Score: ${analysis.confidenceScore ? (analysis.confidenceScore * 1).toFixed(0) + '%' : 'N/A'}
+- Analysis Method: ${analysis.method || 'N/A'}
+- RSI (14-day): ${_.get(analysis, 'technicalIndicators.rsi', []).slice(-1)[0] || 'N/A'}
+- MACD: ${JSON.stringify(_.get(analysis, 'technicalIndicators.macd', []).slice(-1)[0]) || 'N/A'}
+- Bollinger Bands: ${JSON.stringify(_.get(analysis, 'technicalIndicators.bollinger', []).slice(-1)[0]) || 'N/A'}
+- Price Change: ${analysis.priceChange ? '$' + analysis.priceChange.toFixed(2) : 'N/A'} (${analysis.priceChangePercent ? analysis.priceChangePercent.toFixed(2) + '%' : 'N/A'})
 - Volume: ${analysis.volume ? analysis.volume.toLocaleString() : 'N/A'}
 - Recent Prices (last 30 days): 
-${prices.slice(-30).map(p => `  ${p.date}: $${p.close_price} (${p.volume ? 'Vol: ' + p.volume.toLocaleString() : 'N/A'})`).join('\n')}
-
-Provide a detailed fundamental analysis, technical analysis, and a final conclusion with investment recommendation.
+${prices.slice(-30).map(p => `  [${p.date}] high:${p.high.toFixed(2)} low:${p.low.toFixed(2)} close:${p.close.toFixed(2)} (${p.volume ? 'Vol: ' + p.volume.toLocaleString() : 'N/A'})`).join('\n')}
+Provide a detailed fundamental analysis, financial analysis, technical analysis, and a final conclusion with investment recommendation.
 Your response must be in Chinese.
 Your response should be structured with the following markdown headers:
 ### 基本面分析 (Fundamental Analysis)
@@ -183,16 +167,14 @@ Your response should be structured with the following markdown headers:
 ### 技术面分析 (Technical Analysis)
 ### 投资建议 (Investment Recommendation)
         `;
+        // console.log("Generated prompt for LLM:", prompt);
         return prompt;
     }
-
     async _callLLM(prompt) {
         const { LLM_API_ENDPOINT, LLM_API_KEY, LLM_MODEL_NAME } = process.env;
-
         if (!LLM_API_ENDPOINT || !LLM_API_KEY || !LLM_MODEL_NAME) {
             throw new Error('LLM API endpoint, API key, or model name is not configured in .env file.');
         }
-
         const payload = {
             model: LLM_MODEL_NAME,
             messages: [
@@ -206,15 +188,12 @@ Your response should be structured with the following markdown headers:
                 },
             ],
         };
-
         const headers = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${LLM_API_KEY}`,
         };
-
         try {
             const response = await axios.post(LLM_API_ENDPOINT, payload, { headers });
-            
             if (response.data && response.data.choices && response.data.choices.length > 0) {
                 return response.data.choices[0].message.content;
             } else {
@@ -225,11 +204,9 @@ Your response should be structured with the following markdown headers:
             throw new Error('Failed to get analysis from LLM API.');
         }
     }
-
     // Public method to generate prompt for external use
     generatePrompt(overview, analysis, prices) {
         return this._preparePrompt(overview, analysis, prices);
     }
 }
-
 module.exports = new LLMAnalyzer();

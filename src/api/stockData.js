@@ -141,7 +141,6 @@ class StockDataAPI {
                 website: info.website,
                 fullTimeEmployees: info.fullTimeEmployees,
                 companyOfficers: info.companyOfficers || [],
-                // 新增字段
                 dividendRate: info.dividendRate,
                 payoutRatio: info.payoutRatio,
                 fiveYearAvgDividendYield: info.fiveYearAvgDividendYield,
@@ -266,7 +265,6 @@ class StockDataAPI {
             website: row.website,
             fullTimeEmployees: row.full_time_employees,
             companyOfficers: row.company_officers ? JSON.parse(row.company_officers) : [],
-            // 新增字段
             dividendRate: row.dividend_rate,
             payoutRatio: row.payout_ratio,
             fiveYearAvgDividendYield: row.five_year_avg_dividend_yield,

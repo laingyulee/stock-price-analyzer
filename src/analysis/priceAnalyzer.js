@@ -11,14 +11,14 @@ class PriceAnalyzer {
 
     async analyzeStock(symbol, database) {
         try {
-            let stockData = await this.getStockDataFromDB(symbol, database);
+            let stockData = await this.getStockPricesFromDB(symbol, database);
 
             // Check if we have sufficient data for analysis
             if (!stockData || stockData.length === 0) {
                 console.warn(`No cached data found for ${symbol}. Attempting to refresh from API.`);
                 try {
                     await stockAPI.updateStockData(symbol, database);
-                    stockData = await this.getStockDataFromDB(symbol, database);
+                    stockData = await this.getStockPricesFromDB(symbol, database);
                 } catch (refreshError) {
                     console.error(`Failed to refresh data for ${symbol}:`, refreshError.message);
                 }
@@ -107,7 +107,7 @@ class PriceAnalyzer {
         }
     }
 
-    async getStockDataFromDB(symbol, database) {
+    async getStockPricesFromDB(symbol, database) {
         return new Promise((resolve, reject) => {
             const db = database;
             const query = `
